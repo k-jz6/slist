@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商品リストアプリ</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.1/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif;
+            -webkit-print-color-adjust: exact;
+            color-adjust: exact;
+        }
+        .product-list {
+            min-height: 400px;
+        }
+        .star-rating {
+            color: #d1d5db;
+            font-size: 1.25rem; 
+            line-height: 1.2; 
+        }
+        .star-rating .filled {
+            color: #fcd34d;
+        }
+        .star-rating .fa-star-half-alt.filled {
+             color: #fcd34d;
+        }
+        .drag-handle {
+            cursor: grab;
+        }
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+        .product-image {
+            width: 56px; 
+            height: 56px;
+            object-fit: cover;
+        }
+        .modal {
+            display: none; position: fixed; z-index: 1000;
+            left: 0; top: 0; width: 100%; height: 100%;
+            overflow: auto; background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe; margin: 15% auto; padding: 20px;
+            border: 1px solid #888; width: 80%; max-width: 600px;
+        }
+        .close {
+            color: #aaa; float: right; font-size: 28px; font-weight: bold;
+        }
+        .close:hover, .close:focus {
+            color: black; text-decoration: none; cursor: pointer;
+        }
+        .strikethrough { text-decoration: line-through; }
+        .hidden { display: none; }
+        .image-preview { max-width: 100%; max-height: 400px; }
+        .category-dropdown {
+            position: absolute; background-color: white; border: 1px solid #e5e7eb;
+            border-radius: 0.25rem; z-index: 10; width: 150px;
+            max-height: 300px; overflow-y: auto;
+        }
+        .category-item { padding: 0.5rem; cursor: pointer; }
+        .category-item:hover { background-color: #f3f4f6; }
+
+        @media (max-width: 639px) { 
+            .star-rating {
+                font-size: 1rem; 
+                white-space: nowrap;
+            }
+             .star-rating i { margin-right: -1px; } 
+             .product-name-display {
+                 white-space: nowrap;
+                 overflow: hidden;
+                 text-overflow: ellipsis;
+             }
+        }
+        .dragging-item {
+            background-color: #e5e7eb; 
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto p-4">
+        <div id="main-view" class="bg-white rounded-lg shadow-md p-6 mb-4">
+            <div class="flex items-center justify-between mb-4">
+                <h1 class="text-xl font-bold relative" id="title-dropdown-trigger">商品リスト</h1>
+                <div id="category-dropdown" class="category-dropdown hidden">
+                    <div class="category-item" data-category="all">一覧</div>
+                </div>
+            </div>
+            <div class="flex border-b pb-2 mb-4">
+                <div class="w-5"></div> <div class="w-5"></div> <div class="w-14"></div> <div class="flex-grow min-w-0"> 
+                    <div class="text-sm text-gray-600">商品名・評価</div>
+                </div>
+                <div class="w-16 sm:w-24 text-sm text-gray-600 text-left pl-1">購入先</div>
+                <div class="w-12 sm:w-16 text-sm text-gray-600 text-left pl-1">在庫</div>
+            </div>
+            <div id="product-list" class="product-list">
+                </div>
+            <button id="add-product-btn" class="fixed bottom-8 right-8 bg-blue-500 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg hover:bg-blue-600">
+                <i class="fas fa-plus"></i>
+            </button>
+        </div>
+
+        <div id="edit-view" class="bg-white rounded-lg shadow-md p-6 hidden">
+            <div class="flex items-center mb-6">
+                <button id="back-btn" class="text-blue-500 mr-2">
+                    <i class="fas fa-arrow-left"></i>
+                </button>
+                <span>前画面に戻る</span>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="col-span-2 flex items-start">
+                     <div class="mr-4">
+                        <div id="product-image-container" class="w-16 h-16 bg-gray-200 flex items-center justify-center cursor-pointer border rounded">
+                            <img id="product-image-preview" class="w-full h-full object-cover hidden" src="" alt="商品画像">
+                            <span id="product-image-placeholder" class="text-gray-400">写真</span>
+                        </div>
+                        <input type="file" id="product-image-input" accept="image/*" class="hidden">
+                    </div>
+                    <div class="flex-grow">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">商品名</label>
+                        <input type="text" id="product-name" class="w-full p-2 border rounded" maxlength="100">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">評価</label>
+                     <div class="flex items-center" id="rating-input">
+                        <i class="far fa-star text-gray-300 cursor-pointer" data-rating="1"></i>
+                        <i class="far fa-star text-gray-300 cursor-pointer" data-rating="2"></i>
+                        <i class="far fa-star text-gray-300 cursor-pointer" data-rating="3"></i>
+                        <i class="far fa-star text-gray-300 cursor-pointer" data-rating="4"></i>
+                        <i class="far fa-star text-gray-300 cursor-pointer" data-rating="5"></i>
+                        <span class="ml-2" id="rating-value">0</span>
+                    </div>
+                </div>
+                 <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">カテゴリ</label>
+                    <input type="text" id="product-category" class="w-full p-2 border rounded" maxlength="15">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">在庫</label>
+                    <input type="number" id="product-stock" class="w-full p-2 border rounded" min="0" max="1000" step="0.01">
+                </div>
+                 <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">単位</label>
+                    <input type="text" id="product-unit" class="w-full p-2 border rounded" maxlength="10">
+                </div>
+                 <div class="col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">購入先</label>
+                    <input type="text" id="product-vendor" class="w-full p-2 border rounded" maxlength="100">
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">メモ</label>
+                    <textarea id="product-memo" class="w-full p-2 border rounded" rows="3" maxlength="1000"></textarea>
+                </div>
+                 <div class="col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">消費予測</label>
+                    <textarea id="product-consumption" class="w-full p-2 border rounded" rows="3" maxlength="1000"></textarea>
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">参考リンク先</label>
+                    <textarea id="product-link" class="w-full p-2 border rounded" rows="3" maxlength="1000"></textarea>
+                    <div id="product-link-preview-container" class="mt-1"></div>
+                </div>
+             </div>
+             <div class="flex justify-between">
+                <button id="delete-btn" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">完全抹消</button>
+                <button id="cancel-btn" class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">一旦取り消し</button>
+                <button id="save-btn" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">登録</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="image-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <img id="enlarged-image" class="image-preview mx-auto" src="" alt="拡大画像">
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            let products = JSON.parse(localStorage.getItem('products')) || [];
+            let currentProductId = null;
+            let categories = new Set();
+            let currentCategory = 'all';
+
+            const mainView = document.getElementById('main-view');
+            const editView = document.getElementById('edit-view');
+            const productList = document.getElementById('product-list');
+            const addProductBtn = document.getElementById('add-product-btn');
+            const backBtn = document.getElementById('back-btn');
+            const saveBtn = document.getElementById('save-btn');
+            const deleteBtn = document.getElementById('delete-btn');
+            const cancelBtn = document.getElementById('cancel-btn');
+            const productImageContainer = document.getElementById('product-image-container');
+            const productImageInput = document.getElementById('product-image-input');
+            const productImagePreview = document.getElementById('product-image-preview');
+            const productImagePlaceholder = document.getElementById('product-image-placeholder');
+            const imageModal = document.getElementById('image-modal');
+            const enlargedImage = document.getElementById('enlarged-image');
+            const closeModal = document.querySelector('#image-modal .close');
+            const titleDropdownTrigger = document.getElementById('title-dropdown-trigger');
+            const categoryDropdown = document.getElementById('category-dropdown');
+            const ratingValue = document.getElementById('rating-value');
+            const productLinkInput = document.getElementById('product-link');
+            const productLinkPreviewContainer = document.getElementById('product-link-preview-container');
+            const ratingInputStars = document.querySelectorAll('#rating-input i');
+            let currentRating = 0;
+
+            function renderProductList() {
+                productList.innerHTML = '';
+                let filteredProducts = products;
+                if (currentCategory !== 'all') {
+                    filteredProducts = products.filter(p => p.category === currentCategory);
+                }
+
+                filteredProducts.sort((a, b) => {
+                    if (a.cancelled && !b.cancelled) return 1;
+                    if (!a.cancelled && b.cancelled) return -1;
+                    const indexA = products.findIndex(p => p.id === a.id);
+                    const indexB = products.findIndex(p => p.id === b.id);
+                    return indexA - indexB;
+                });
+
+                filteredProducts.forEach(product => {
+                    const productItem = document.createElement('div');
+                    productItem.className = `flex items-center py-2 border-b ${product.cancelled ? 'strikethrough opacity-50' : ''}`;
+                    productItem.dataset.id = product.id;
+
+                    const vendorDisplay = product.vendor ? (product.vendor.length > 3 ? product.vendor.substring(0, 3) + '…' : product.vendor.substring(0, 3)) : '';
+
+                    // Removed comments from this template literal
+                    productItem.innerHTML = `
+                        <div class="w-5 drag-handle flex items-center justify-center">
+                             <i class="fas fa-grip-lines text-gray-400"></i>
+                        </div>
+                        <div class="w-5">
+                            <input type="checkbox" class="product-checkbox" ${product.checked ? 'checked' : ''}>
+                        </div>
+                        <div class="w-14 flex items-center justify-center">
+                            ${product.image ? `<img src="${product.image}" class="product-image rounded cursor-pointer" alt="${product.name}">` :
+                            `<div class="w-12 h-12 bg-gray-200 rounded flex items-center justify-center">
+                                <span class="text-gray-400 text-xs">写真</span>
+                            </div>`}
+                        </div>
+                        <div class="flex-grow min-w-0 pr-1">
+                            <div class="star-rating">${renderStarRating(product.rating)}</div>
+                            <div class="truncate product-name-display">${product.name}</div>
+                        </div>
+                        <div class="w-16 sm:w-24 truncate text-left text-xs pl-1">${vendorDisplay}</div>
+                        <div class="w-12 sm:w-16 text-left text-xs pl-1">${product.stock}${product.unit || ''}</div>
+                    `;
+
+                    productList.appendChild(productItem);
+
+                    const listProductImage = productItem.querySelector('.product-image');
+                    if (listProductImage) {
+                        listProductImage.addEventListener('click', () => {
+                            if (product.image) {
+                                enlargedImage.src = product.image;
+                                imageModal.style.display = 'block';
+                            }
+                        });
+                    }
+
+                    const checkbox = productItem.querySelector('.product-checkbox');
+                    checkbox.addEventListener('change', function() {
+                        const prod = products.find(p => p.id === product.id);
+                        if (prod) {
+                            prod.checked = this.checked;
+                            saveProducts();
+                        }
+                    });
+
+                    const productNameDisplay = productItem.querySelector('.product-name-display');
+                    if (productNameDisplay) {
+                        let namePressTimer;
+                        const startNamePress = (e) => { e.stopPropagation(); namePressTimer = window.setTimeout(() => editProduct(product.id), 500); };
+                        const clearNamePress = () => clearTimeout(namePressTimer);
+                        productNameDisplay.addEventListener('dblclick', (e) => { e.stopPropagation(); editProduct(product.id); });
+                        productNameDisplay.addEventListener('mousedown', startNamePress);
+                        productNameDisplay.addEventListener('mouseup', clearNamePress);
+                        productNameDisplay.addEventListener('mouseleave', clearNamePress);
+                        productNameDisplay.addEventListener('touchstart', startNamePress, { passive: true });
+                        productNameDisplay.addEventListener('touchend', clearNamePress);
+                    }
+
+                    let itemPressTimer;
+                    const startItemPress = (e) => {
+                        if (e.target.closest('.drag-handle, .product-checkbox, .product-image, .product-name-display')) return;
+                        itemPressTimer = window.setTimeout(() => editProduct(product.id), 500);
+                    };
+                    const clearItemPress = () => clearTimeout(itemPressTimer);
+                    productItem.addEventListener('mousedown', startItemPress);
+                    productItem.addEventListener('mouseup', clearItemPress);
+                    productItem.addEventListener('mouseleave', clearItemPress);
+                    productItem.addEventListener('touchstart', startItemPress, { passive: true });
+                    productItem.addEventListener('touchend', clearItemPress);
+                });
+
+                setupDragAndDrop();
+                updateCategories();
+            }
+
+            function renderStarRating(rating) {
+                let stars = ''; const totalStars = 5;
+                for (let i = 1; i <= totalStars; i++) {
+                    if (i <= rating) stars += '<i class="fas fa-star filled"></i>';
+                    else if (i - 0.5 === rating) stars += '<i class="fas fa-star-half-alt filled"></i>';
+                    else stars += '<i class="far fa-star"></i>';
+                } return stars;
+            }
+
+            function updateRatingDisplay() {
+                ratingInputStars.forEach((star, index) => {
+                    const starValue = index + 1;
+                    if (starValue <= currentRating) star.className = 'fas fa-star text-yellow-400 cursor-pointer';
+                    else if (starValue - 0.5 === currentRating) star.className = 'fas fa-star-half-alt text-yellow-400 cursor-pointer';
+                    else star.className = 'far fa-star text-gray-300 cursor-pointer';
+                });
+                ratingValue.textContent = currentRating;
+            }
+
+            function updateCategories() {
+                categories = new Set();
+                products.forEach(p => { if (p.category?.trim()) categories.add(p.category.trim()); });
+                const currentSelectedCategory = currentCategory;
+                categoryDropdown.innerHTML = '<div class="category-item" data-category="all">一覧</div>';
+                const sortedCategories = Array.from(categories).sort();
+                sortedCategories.forEach(category => {
+                    const categoryItem = document.createElement('div');
+                    categoryItem.className = 'category-item';
+                    categoryItem.textContent = category;
+                    categoryItem.dataset.category = category;
+                    categoryDropdown.appendChild(categoryItem);
+                });
+                document.querySelectorAll('#category-dropdown .category-item').forEach(item => {
+                    item.addEventListener('click', function() {
+                        currentCategory = this.dataset.category;
+                        titleDropdownTrigger.textContent = currentCategory === 'all' ? '商品リスト' : currentCategory;
+                        categoryDropdown.classList.add('hidden');
+                        renderProductList();
+                    });
+                });
+                if (currentSelectedCategory !== 'all' && categories.has(currentSelectedCategory)) {
+                    titleDropdownTrigger.textContent = currentSelectedCategory;
+                } else {
+                    currentCategory = 'all';
+                    titleDropdownTrigger.textContent = '商品リスト';
+                }
+            }
+
+            function setupRating() {
+                ratingInputStars.forEach(star => {
+                    star.addEventListener('click', function(e) {
+                        const rect = this.getBoundingClientRect();
+                        const clickX = e.clientX - rect.left;
+                        const starIndex = parseFloat(this.dataset.rating);
+                        if (clickX < rect.width / 2 && clickX > 0) setRating(starIndex - 0.5);
+                        else if (clickX >= rect.width / 2 && clickX < rect.width) setRating(starIndex);
+                    });
+                    star.addEventListener('mousemove', function(e) {
+                         const rect = this.getBoundingClientRect();
+                        const hoverX = e.clientX - rect.left;
+                        const starIndex = parseFloat(this.dataset.rating);
+                        let potentialRating = 0;
+                         if (hoverX < rect.width / 2 && hoverX > 0) potentialRating = starIndex - 0.5;
+                        else if (hoverX >= rect.width / 2 && hoverX < rect.width) potentialRating = starIndex;
+                         ratingInputStars.forEach((s, i) => {
+                            const sValue = i + 1;
+                            if (sValue <= potentialRating) s.className = 'fas fa-star text-yellow-400 cursor-pointer';
+                            else if (sValue - 0.5 === potentialRating) s.className = 'fas fa-star-half-alt text-yellow-400 cursor-pointer';
+                            else s.className = 'far fa-star text-gray-300 cursor-pointer';
+                        });
+                    });
+                });
+                document.getElementById('rating-input').addEventListener('mouseleave', () => updateRatingDisplay());
+                setRating(0);
+            }
+
+            function setRating(rating) {
+                currentRating = Math.max(0, Math.min(5, rating));
+                ratingValue.textContent = currentRating;
+                updateRatingDisplay();
+            }
+
+            function setupDragAndDrop() {
+                const productItems = Array.from(productList.querySelectorAll('div[data-id]'));
+                productItems.forEach(item => {
+                    const handle = item.querySelector('.drag-handle');
+                    if (!handle) return;
+                    let draggedItem = null;
+                    const onDragStart = (e) => {
+                        draggedItem = item;
+                        draggedItem.classList.add('dragging-item');
+                        document.addEventListener(e.type === 'touchstart' ? 'touchmove' : 'mousemove', onDragMove, { passive: false });
+                        document.addEventListener(e.type === 'touchstart' ? 'touchend' : 'mouseup', onDragEnd);
+                        if (e.type === 'mousedown') e.preventDefault();
+                    };
+                    const onDragMove = (e) => {
+                        if (!draggedItem) return;
+                        e.preventDefault();
+                        const y = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
+                        let beforeElement = null;
+                        const siblings = Array.from(productList.querySelectorAll('div[data-id]:not(.dragging-item)'));
+                        for (const sibling of siblings) {
+                            const rect = sibling.getBoundingClientRect();
+                            if (y < rect.top + rect.height / 2) {
+                                beforeElement = sibling;
+                                break;
+                            }
+                        }
+                        if (beforeElement) {
+                            if (draggedItem.nextSibling !== beforeElement)
+                                productList.insertBefore(draggedItem, beforeElement);
+                        } else {
+                            productList.appendChild(draggedItem);
+                        }
+                    };
+                    const onDragEnd = () => {
+                        if (!draggedItem) return;
+                        draggedItem.classList.remove('dragging-item');
+                        updateProductsOrder();
+                        draggedItem = null;
+                        document.removeEventListener('mousemove', onDragMove);
+                        document.removeEventListener('mouseup', onDragEnd);
+                        document.removeEventListener('touchmove', onDragMove);
+                        document.removeEventListener('touchend', onDragEnd);
+                    };
+                    handle.addEventListener('mousedown', onDragStart);
+                    handle.addEventListener('touchstart', onDragStart, { passive: false });
+                });
+            }
+
+            function updateProductsOrder() {
+                const items = Array.from(productList.children).filter(el => el.dataset?.id);
+                const newOrderIds = items.map(item => item.dataset.id);
+                const productMap = new Map(products.map(p => [p.id, p]));
+                const reorderedProducts = [];
+                newOrderIds.forEach(id => {
+                    if (productMap.has(id)) {
+                        reorderedProducts.push(productMap.get(id));
+                        productMap.delete(id);
+                    }
+                });
+                 productMap.forEach(p => reorderedProducts.push(p)); // Add remaining
+                products = reorderedProducts;
+                saveProducts();
+            }
+
+            function clearProductForm() {
+                document.getElementById('product-name').value = '';
+                document.getElementById('product-vendor').value = '';
+                document.getElementById('product-category').value = '';
+                document.getElementById('product-stock').value = '';
+                document.getElementById('product-unit').value = '';
+                document.getElementById('product-memo').value = '';
+                document.getElementById('product-consumption').value = '';
+                productLinkInput.value = '';
+                updateLinkPreview();
+                productImagePreview.classList.add('hidden');
+                productImagePlaceholder.classList.remove('hidden');
+                productImagePreview.src = '';
+                setRating(0);
+                currentProductId = null;
+            }
+
+            function setProductForm(product) {
+                 document.getElementById('product-name').value = product.name || '';
+                document.getElementById('product-vendor').value = product.vendor || '';
+                document.getElementById('product-category').value = product.category || '';
+                document.getElementById('product-stock').value = product.stock || '';
+                document.getElementById('product-unit').value = product.unit || '';
+                document.getElementById('product-memo').value = product.memo || '';
+                document.getElementById('product-consumption').value = product.consumption || '';
+                productLinkInput.value = product.link || '';
+                updateLinkPreview();
+                 if (product.image) {
+                    productImagePreview.src = product.image;
+                    productImagePreview.classList.remove('hidden');
+                    productImagePlaceholder.classList.add('hidden');
+                } else {
+                    productImagePreview.classList.add('hidden');
+                    productImagePlaceholder.classList.remove('hidden');
+                     productImagePreview.src = '';
+                }
+                 setRating(product.rating || 0);
+                currentProductId = product.id;
+            }
+
+            function getProductFromForm() {
+                const product = {
+                    id: currentProductId || Date.now().toString(),
+                    name: document.getElementById('product-name').value.trim(),
+                    rating: currentRating,
+                    vendor: document.getElementById('product-vendor').value.trim(),
+                    category: document.getElementById('product-category').value.trim(),
+                    stock: document.getElementById('product-stock').value,
+                    unit: document.getElementById('product-unit').value.trim(),
+                    memo: document.getElementById('product-memo').value.trim(),
+                    consumption: document.getElementById('product-consumption').value.trim(),
+                    link: productLinkInput.value.trim(),
+                    image: productImagePreview.classList.contains('hidden') ? null : productImagePreview.src,
+                    checked: false, cancelled: false
+                };
+                 if (currentProductId) {
+                    const existingProduct = products.find(p => p.id === currentProductId);
+                    if (existingProduct) {
+                        product.checked = existingProduct.checked;
+                        product.cancelled = existingProduct.cancelled;
+                    }
+                }
+                return product;
+            }
+
+            function saveProducts() {
+                localStorage.setItem('products', JSON.stringify(products));
+            }
+
+            function editProduct(id) {
+                const product = products.find(p => p.id === id);
+                if (product) {
+                    setProductForm(product);
+                    mainView.classList.add('hidden');
+                    editView.classList.remove('hidden');
+                }
+            }
+
+            function updateLinkPreview() {
+                const url = productLinkInput.value.trim();
+                productLinkPreviewContainer.innerHTML = '';
+                if (url) {
+                    try {
+                        new URL(url);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.textContent = "リンクを開く: " + (url.length > 60 ? url.substring(0, 57) + "..." : url);
+                        link.target = "_blank"; link.rel = "noopener noreferrer";
+                        link.className = "text-blue-500 hover:underline text-sm break-all";
+                        productLinkPreviewContainer.appendChild(link);
+                    } catch (e) { /* Silent */ }
+                }
+            }
+
+            function setupEventListeners() {
+                addProductBtn.addEventListener('click', () => {
+                    clearProductForm();
+                    mainView.classList.add('hidden');
+                    editView.classList.remove('hidden');
+                });
+                backBtn.addEventListener('click', () => {
+                    editView.classList.add('hidden');
+                    mainView.classList.remove('hidden');
+                });
+                saveBtn.addEventListener('click', () => {
+                    const product = getProductFromForm();
+                    if (!product.name) { alert('商品名は必須です。'); return; }
+                    const existingIndex = products.findIndex(p => p.id === product.id);
+                    if (existingIndex !== -1) products[existingIndex] = product;
+                    else products.unshift(product);
+                    saveProducts();
+                    renderProductList();
+                    editView.classList.add('hidden');
+                    mainView.classList.remove('hidden');
+                });
+                deleteBtn.addEventListener('click', () => {
+                    if (currentProductId && confirm('この商品を完全に削除しますか？')) {
+                        products = products.filter(p => p.id !== currentProductId);
+                        saveProducts();
+                        renderProductList();
+                        editView.classList.add('hidden');
+                        mainView.classList.remove('hidden');
+                    }
+                });
+                cancelBtn.addEventListener('click', () => {
+                    if (currentProductId) {
+                        const productIndex = products.findIndex(p => p.id === currentProductId);
+                        if (productIndex !== -1) {
+                            products[productIndex].cancelled = !products[productIndex].cancelled;
+                            saveProducts();
+                            renderProductList();
+                            editView.classList.add('hidden');
+                            mainView.classList.remove('hidden');
+                        }
+                    }
+                });
+
+                let imageContainerPressTimer;
+                const startImageContainerPress = (e) => {
+                    if (e.target === productImagePreview && productImagePreview.src && !productImagePreview.classList.contains('hidden') && productImagePreview.src !== window.location.href) {
+                        clearTimeout(imageContainerPressTimer); return;
+                    }
+                    imageContainerPressTimer = window.setTimeout(() => productImageInput.click(), 500);
+                };
+                const clearImageContainerPress = () => clearTimeout(imageContainerPressTimer);
+                productImageContainer.addEventListener('dblclick', () => productImageInput.click());
+                productImageContainer.addEventListener('mousedown', startImageContainerPress);
+                productImageContainer.addEventListener('mouseup', clearImageContainerPress);
+                productImageContainer.addEventListener('mouseleave', clearImageContainerPress);
+                productImageContainer.addEventListener('touchstart', startImageContainerPress, { passive: true });
+                productImageContainer.addEventListener('touchend', clearImageContainerPress);
+                productImagePreview.addEventListener('click', () => {
+                     if (productImagePreview.src && !productImagePreview.classList.contains('hidden') && productImagePreview.src !== window.location.href ) {
+                        enlargedImage.src = productImagePreview.src;
+                        imageModal.style.display = 'block';
+                    } else productImageInput.click();
+                });
+                productImageInput.addEventListener('change', (e) => {
+                    if (e.target.files?.[0]) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            productImagePreview.src = event.target.result;
+                            productImagePreview.classList.remove('hidden');
+                            productImagePlaceholder.classList.add('hidden');
+                        };
+                        reader.readAsDataURL(e.target.files[0]);
+                    }
+                });
+                closeModal.addEventListener('click', () => imageModal.style.display = 'none');
+                window.addEventListener('click', (e) => { if (e.target === imageModal) imageModal.style.display = 'none'; });
+                titleDropdownTrigger.addEventListener('click', (e) => { e.stopPropagation(); categoryDropdown.classList.toggle('hidden'); });
+                document.addEventListener('click', (e) => {
+                    if (!titleDropdownTrigger.contains(e.target) && !categoryDropdown.contains(e.target)) {
+                        categoryDropdown.classList.add('hidden');
+                    }
+                });
+                productLinkInput.addEventListener('input', updateLinkPreview);
+            }
+
+            function init() {
+                renderProductList();
+                setupRating();
+                setupEventListeners();
+            }
+            init();
+        });
+    </script>
+</body>
+</html>
